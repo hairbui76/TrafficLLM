@@ -1,0 +1,12 @@
+transformers>=4.57
+torch>=2.0
+peft>=0.7.0
+accelerate
+sentencepiece
+scikit-learn
+fire
+typer
+ruamel.yaml
+datasets
+tqdm
+numpy
