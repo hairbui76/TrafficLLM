@@ -24,21 +24,24 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
+if torch.cuda.is_available():
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+torch_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 
 def load_model_and_tokenizer(
         model_dir: Union[str, Path], trust_remote_code: bool = True
 ):
     model_dir = Path(model_dir).expanduser().resolve()
+    device_map = 'auto' if torch.cuda.is_available() else None
     if (model_dir / 'adapter_config.json').exists():
         with open(model_dir / 'adapter_config.json', 'r', encoding='utf-8') as file:
             config = json.load(file)
         model = AutoModel.from_pretrained(
             config.get('base_model_name_or_path'),
             trust_remote_code=trust_remote_code,
-            device_map='auto',
-            torch_dtype=torch.bfloat16
+            device_map=device_map,
+            torch_dtype=torch_dtype
         )
         model = PeftModelForCausalLM.from_pretrained(
             model=model,
@@ -50,8 +53,8 @@ def load_model_and_tokenizer(
         model = AutoModel.from_pretrained(
             model_dir,
             trust_remote_code=trust_remote_code,
-            device_map='auto',
-            torch_dtype=torch.bfloat16
+            device_map=device_map,
+            torch_dtype=torch_dtype
         )
         tokenizer_dir = model_dir
     tokenizer = AutoTokenizer.from_pretrained(
@@ -61,7 +64,8 @@ def load_model_and_tokenizer(
         use_fast=False
     )
 
-    #model = model.to(device)
+    if not torch.cuda.is_available():
+        model = model.to(device)
     return model, tokenizer
 
 def td_evaluation(predict_responses, target_responses, label_file, evaluation_result_file):
@@ -76,7 +80,7 @@ def td_evaluation(predict_responses, target_responses, label_file, evaluation_re
     for index, (predict_response, target_response) in enumerate(zip(predict_responses, target_responses)):
         # response = predict_response.split(" ")[-1]
         response = predict_response
-        
+
         # if ' ' not in predict_response:
         if not predict_response.isspace():
             # print(1)
@@ -96,7 +100,7 @@ def td_evaluation(predict_responses, target_responses, label_file, evaluation_re
                 preds.append(label_dict[response])
             # labels.append(label_dict[target_response.split(" ")[-1]])
             labels.append(label_dict[target_response])
-    
+
     possible_class = set(labels)
     pred_fixed = []
     for i in range(len(preds)):
@@ -106,7 +110,7 @@ def td_evaluation(predict_responses, target_responses, label_file, evaluation_re
             pred_fixed.append(replacement_class)
         else:
             pred_fixed.append(preds[i])
-    
+
     with open(evaluation_result_file, 'w', encoding="utf-8") as f:
         # print("Date Time ------ %s ------" % str(datetime.now()),file = f)
         if error_response:
@@ -156,7 +160,7 @@ def main(
     for index, row in label_df.iterrows():
         target_responses.append(row['messages'][2]['content'])
     # print(target_responses)
-    
+
     test_prompts = []
     for test_data in test_set:
         test_prompts.append(json.loads(test_data)["messages"])
@@ -165,9 +169,9 @@ def main(
     predict_responses  = []
 
     for prompt_index in tqdm(range(len(test_prompts))):
-        
+
         messages = test_prompts[prompt_index]
-        
+
         inputs = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
@@ -175,7 +179,7 @@ def main(
             return_tensors="pt",
             return_dict=True
         ).to(model.device)
-        
+
         generated_ids = model.generate(
                         inputs.input_ids,
                         max_new_tokens=1024
@@ -184,11 +188,11 @@ def main(
                         output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
                             ]
         response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-        
+
         print("response: ",response)
         print("label: ",target_responses[prompt_index])
         predict_responses.append(response)
-         
+
     td_evaluation(predict_responses, target_responses, label_file, evaluation_result_file)
 
 if __name__ == '__main__':
