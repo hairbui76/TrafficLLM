@@ -3,6 +3,8 @@ import streamlit as st
 import torch
 import json
 import os
+import subprocess
+from pathlib import Path
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '4'
 
@@ -65,6 +67,35 @@ def preprompt(task, traffic_data):
 
     return prompt
 
+def run_tshark_debug(pcap_file, fields):
+    pcap_path = str(Path(pcap_file).resolve())
+
+    args = ["tshark", "-r", pcap_path, "-T", "fields"]
+    for f in fields:
+        args += ["-e", f]
+    args += ["-Y", "tcp or udp"]
+
+    print("cwd =", os.getcwd())
+    print("pcap_path =", pcap_path)
+    print("args =", [repr(x) for x in args])
+
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace"
+    )
+
+    print("returncode =", result.returncode)
+    print("stderr =", repr(result.stderr[:500]))
+
+    lines = result.stdout.splitlines()
+    print("stdout line count =", len(lines))
+    print("first 3 lines =", [repr(x) for x in lines[:3]])
+
+    return lines
+
 
 def load_pcap(pcap_file):
     build_data = []
@@ -77,7 +108,7 @@ def load_pcap(pcap_file):
               "ip.flags", "ip.flags.rb", "ip.flags.df", "ip.flags.mf", "ip.frag_offset", "ip.ttl", "ip.proto",
               "ip.checksum", "ip.checksum.status", "tcp.srcport", "tcp.dstport", "tcp.stream",
               "tcp.len", "tcp.seq", "tcp.nxtseq", "tcp.ack", "tcp.hdr_len", "tcp.flags",
-              "tcp.flags.res", "tcp.flags.ns", "tcp.flags.cwr", "tcp.flags.ecn", "tcp.flags.urg", "tcp.flags.ack",
+              "tcp.flags.res", "tcp.flags.cwr", "tcp.flags.urg", "tcp.flags.ack",
               "tcp.flags.push", "tcp.flags.reset", "tcp.flags.syn", "tcp.flags.fin", "tcp.flags.str",
               "tcp.window_size", "tcp.window_size_scalefactor", "tcp.checksum", "tcp.checksum.status",
               "tcp.urgent_pointer",
@@ -87,11 +118,12 @@ def load_pcap(pcap_file):
               "udp.checksum", "udp.checksum.status", "udp.stream", "data.len"]
 
     extract_str = " -e " + " -e ".join(fields) + " "
-    cmd = "tshark -r " + pcap_file + extract_str + "-T fields -Y 'tcp or udp' > " + tmp_path
-    os.system(cmd)
+    cmd = 'tshark -r ' + pcap_file + extract_str + '-T fields -Y "tcp or udp" > ' + tmp_path
+    print(cmd)
 
-    with open(tmp_path, "r", encoding="utf-8") as fin:
-        lines = fin.readlines()
+    # with open(tmp_path, "r", encoding="utf-8") as fin:
+    #     lines = fin.readlines()
+    lines = run_tshark_debug(pcap_file, fields)
     for line in lines:
         packet_data = ""
         values = line[:-1].split("\t")
