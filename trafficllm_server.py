@@ -6,7 +6,9 @@ import os
 import subprocess
 from pathlib import Path
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+if torch.cuda.is_available():
+    os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
@@ -21,14 +23,18 @@ st.set_page_config(
 def load_model(model, ptuning_path):
     if ptuning_path is not None:
         prefix_state_dict = torch.load(
-            os.path.join(ptuning_path, "pytorch_model.bin"))
+            os.path.join(ptuning_path, "pytorch_model.bin"),
+            map_location=device)
         new_prefix_state_dict = {}
         for k, v in prefix_state_dict.items():
             if k.startswith("transformer.prefix_encoder."):
                 new_prefix_state_dict[k[len("transformer.prefix_encoder."):]] = v
         model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
 
-        model = model.half().cuda()
+        if torch.cuda.is_available():
+            model = model.half().cuda()
+        else:
+            model = model.float().to(device)
         model.transformer.prefix_encoder.float()
 
     return model
