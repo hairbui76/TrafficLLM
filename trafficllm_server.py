@@ -7,8 +7,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-if torch.cuda.is_available():
-    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+GPU_COUNT = torch.cuda.device_count() if torch.cuda.is_available() else 0
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
@@ -23,7 +22,14 @@ st.set_page_config(
 
 
 def get_device():
-    return torch.device(st.session_state.get("device_choice", "cpu"))
+    device_type = st.session_state.get("device_type", "cpu")
+    if device_type == "cpu":
+        return torch.device("cpu")
+    selected_gpus = st.session_state.get("selected_gpus", [])
+    if not selected_gpus:
+        return torch.device("cpu")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in selected_gpus)
+    return torch.device("cuda:0")
 
 
 def load_model(model, ptuning_path):
@@ -39,10 +45,15 @@ def load_model(model, ptuning_path):
         model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
 
         if device.type == "cuda":
-            model = model.half().cuda()
+            model = model.half().to(device)
+            selected_gpus = st.session_state.get("selected_gpus", [])
+            if len(selected_gpus) > 1:
+                visible_ids = list(range(len(selected_gpus)))
+                model = torch.nn.DataParallel(model, device_ids=visible_ids)
         else:
             model = model.float().cpu()
-        model.transformer.prefix_encoder.float()
+        raw_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+        raw_model.transformer.prefix_encoder.float()
 
     return model
 
@@ -208,18 +219,49 @@ tokenizer, model = get_model()
 
 st.title("Chat with TrafficLLM")
 
-device_options = ["cpu"]
-if torch.cuda.is_available():
-    device_options.append("cuda")
-
-st.sidebar.selectbox(
+device_type = st.sidebar.radio(
     "Device",
-    options=device_options,
-    index=len(device_options) - 1,
-    key="device_choice",
+    options=["CPU", "GPU"],
+    index=1 if GPU_COUNT > 0 else 0,
+    disabled=GPU_COUNT == 0,
+    key="device_type_radio",
+    horizontal=True,
 )
-st.sidebar.caption(f"CUDA available: {torch.cuda.is_available()}"
-                   + (f" ({torch.cuda.get_device_name(0)})" if torch.cuda.is_available() else ""))
+st.session_state["device_type"] = "cuda" if device_type == "GPU" else "cpu"
+
+if device_type == "GPU" and GPU_COUNT > 0:
+    gpu_info = {i: torch.cuda.get_device_name(i) for i in range(GPU_COUNT)}
+    gpu_labels = [f"GPU {i}: {name}" for i, name in gpu_info.items()]
+
+    use_all = st.sidebar.checkbox("Select all GPUs", value=(GPU_COUNT == 1), key="use_all_gpus")
+
+    if use_all:
+        st.session_state["selected_gpus"] = list(range(GPU_COUNT))
+        for i, label in enumerate(gpu_labels):
+            st.sidebar.caption(f"✅ {label}")
+    else:
+        chosen = st.sidebar.multiselect(
+            "Choose GPU(s)",
+            options=list(range(GPU_COUNT)),
+            default=[0],
+            format_func=lambda i: gpu_labels[i],
+            key="gpu_multiselect",
+        )
+        st.session_state["selected_gpus"] = chosen
+        if not chosen:
+            st.sidebar.warning("No GPU selected — will fall back to CPU.")
+
+    selected = st.session_state.get("selected_gpus", [])
+    mem_info = []
+    for i in selected:
+        total = torch.cuda.get_device_properties(i).total_mem / (1024 ** 3)
+        mem_info.append(f"GPU {i}: {total:.1f} GB")
+    if mem_info:
+        st.sidebar.caption("Memory: " + " | ".join(mem_info))
+else:
+    st.session_state["selected_gpus"] = []
+    if GPU_COUNT == 0:
+        st.sidebar.caption("No CUDA GPU detected — using CPU.")
 
 max_length = st.sidebar.slider(
     'max_length', 0, 32768, 8192, step=1
@@ -289,6 +331,8 @@ if uploaded_file is not None:
 button = st.button("Submit", key="predict")
 
 if button:
+    if isinstance(traffic_data, list):
+        traffic_data = "\n".join(traffic_data)
 
     input_placeholder.markdown("**Human instruction:** %s **Traffic data:** %s."
                                % (human_instruction if human_instruction != "" else "None.",
