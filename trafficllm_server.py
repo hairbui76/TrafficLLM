@@ -9,7 +9,6 @@ from pathlib import Path
 
 if torch.cuda.is_available():
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
@@ -23,7 +22,12 @@ st.set_page_config(
 )
 
 
+def get_device():
+    return torch.device(st.session_state.get("device_choice", "cpu"))
+
+
 def load_model(model, ptuning_path):
+    device = get_device()
     if ptuning_path is not None:
         prefix_state_dict = torch.load(
             os.path.join(ptuning_path, "pytorch_model.bin"),
@@ -34,10 +38,10 @@ def load_model(model, ptuning_path):
                 new_prefix_state_dict[k[len("transformer.prefix_encoder."):]] = v
         model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
 
-        if torch.cuda.is_available():
+        if device.type == "cuda":
             model = model.half().cuda()
         else:
-            model = model.float().to(device)
+            model = model.float().cpu()
         model.transformer.prefix_encoder.float()
 
     return model
@@ -193,7 +197,7 @@ def get_model():
     model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)
     model = AutoModel.from_pretrained(
         config["model_path"], config=model_config, trust_remote_code=True,
-        device_map="cpu" if not torch.cuda.is_available() else None
+        device_map="cpu",
     )
 
     return tokenizer, model
@@ -203,6 +207,19 @@ tokenizer, model = get_model()
 
 
 st.title("Chat with TrafficLLM")
+
+device_options = ["cpu"]
+if torch.cuda.is_available():
+    device_options.append("cuda")
+
+st.sidebar.selectbox(
+    "Device",
+    options=device_options,
+    index=len(device_options) - 1,
+    key="device_choice",
+)
+st.sidebar.caption(f"CUDA available: {torch.cuda.is_available()}"
+                   + (f" ({torch.cuda.get_device_name(0)})" if torch.cuda.is_available() else ""))
 
 max_length = st.sidebar.slider(
     'max_length', 0, 32768, 8192, step=1
