@@ -9,7 +9,7 @@ import random
 import os
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 app = Flask(__name__)
 CORS(app)
 

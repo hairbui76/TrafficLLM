@@ -4,7 +4,7 @@ import torch
 import json
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)

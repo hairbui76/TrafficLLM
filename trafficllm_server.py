@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 if torch.cuda.is_available():
-    os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("config.json", "r", encoding="utf-8") as fin:
