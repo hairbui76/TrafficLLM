@@ -180,7 +180,10 @@ def dual_stage_inference(human_instruction, traffic_data, model):
 def get_model():
     tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
     model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)
-    model = AutoModel.from_pretrained(config["model_path"], config=model_config, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        config["model_path"], config=model_config, trust_remote_code=True,
+        device_map="cpu" if not torch.cuda.is_available() else None
+    )
 
     return tokenizer, model
 

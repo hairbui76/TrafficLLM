@@ -118,7 +118,10 @@ def main():
         # Evaluation
         # Loading extra state dict of prefix encoder
         model = AutoModel.from_pretrained(model_args.model_name_or_path, config=config, trust_remote_code=True)
-        prefix_state_dict = torch.load(os.path.join(model_args.ptuning_checkpoint, "pytorch_model.bin"))
+        prefix_state_dict = torch.load(
+            os.path.join(model_args.ptuning_checkpoint, "pytorch_model.bin"),
+            map_location="cpu" if not torch.cuda.is_available() else None
+        )
         new_prefix_state_dict = {}
         for k, v in prefix_state_dict.items():
             if k.startswith("transformer.prefix_encoder."):

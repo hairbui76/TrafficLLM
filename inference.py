@@ -4,20 +4,26 @@ import torch
 import json
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+if torch.cuda.is_available():
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_model(model, ptuning_path):
     if ptuning_path is not None:
         prefix_state_dict = torch.load(
-            os.path.join(ptuning_path, "pytorch_model.bin"))
+            os.path.join(ptuning_path, "pytorch_model.bin"),
+            map_location=device)
         new_prefix_state_dict = {}
         for k, v in prefix_state_dict.items():
             if k.startswith("transformer.prefix_encoder."):
                 new_prefix_state_dict[k[len("transformer.prefix_encoder."):]] = v
         model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
 
-        model = model.half().cuda()
+        if torch.cuda.is_available():
+            model = model.half().cuda()
+        else:
+            model = model.float().to(device)
         model.transformer.prefix_encoder.float()
 
     return model
@@ -73,7 +79,10 @@ def main(config, prompt: str = None, **kwargs):
 
     tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
     model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)
-    model = AutoModel.from_pretrained(config["model_path"], config=model_config, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        config["model_path"], config=model_config, trust_remote_code=True,
+        device_map="cpu" if not torch.cuda.is_available() else None
+    )
 
     # Stage 1: task understanding
     ptuning_path = os.path.join(config["peft_path"], config["peft_set"]["NLP"])

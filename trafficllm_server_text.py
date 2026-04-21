@@ -16,17 +16,24 @@ st.set_page_config(
 )
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def load_model(model, ptuning_path):
     if ptuning_path is not None:
         prefix_state_dict = torch.load(
-            os.path.join(ptuning_path, "pytorch_model.bin"))
+            os.path.join(ptuning_path, "pytorch_model.bin"),
+            map_location=device)
         new_prefix_state_dict = {}
         for k, v in prefix_state_dict.items():
             if k.startswith("transformer.prefix_encoder."):
                 new_prefix_state_dict[k[len("transformer.prefix_encoder."):]] = v
         model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
 
-        model = model.half().cuda()
+        if torch.cuda.is_available():
+            model = model.half().cuda()
+        else:
+            model = model.float().to(device)
         model.transformer.prefix_encoder.float()
 
     return model
@@ -96,7 +103,10 @@ def dual_stage_inference(human_instruction, traffic_data, model):
 def get_model():
     tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
     model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)
-    model = AutoModel.from_pretrained(config["model_path"], config=model_config, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        config["model_path"], config=model_config, trust_remote_code=True,
+        device_map="cpu" if not torch.cuda.is_available() else None
+    )
 
     return tokenizer, model
 
