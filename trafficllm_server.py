@@ -3,6 +3,7 @@ import streamlit as st
 import torch
 import json
 import os
+import sys
 import subprocess
 from pathlib import Path
 
@@ -12,6 +13,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
+if isinstance(config["model_path"], dict):
+    config["model_path"] = config["model_path"][sys.platform]
 
 st.set_page_config(
     page_title="TrafficLLM Demo",
@@ -162,6 +165,14 @@ def dual_stage_inference(human_instruction, traffic_data, model):
     print("Downstream task: " + task_response)
 
     # Stage 2: task-specific traffic learning
+    if task_response not in config["tasks"]:
+        from difflib import SequenceMatcher
+        best_match = max(
+            config["tasks"].keys(),
+            key=lambda k: SequenceMatcher(None, task_response.lower(), k.lower()).ratio()
+        )
+        print(f"Unknown task '{task_response}', falling back to closest match: '{best_match}'")
+        task_response = best_match
     task = config["tasks"][task_response]
     ptuning_path = os.path.join(config["peft_path"], config["peft_set"][task])
     model_downstream = load_model(model, ptuning_path)

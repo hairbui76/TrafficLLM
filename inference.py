@@ -3,6 +3,7 @@ import fire
 import torch
 import json
 import os
+import sys
 
 if torch.cuda.is_available():
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -76,6 +77,8 @@ def main(config, prompt: str = None, **kwargs):
 
     with open(config, "r", encoding="utf-8") as fin:
         config = json.load(fin)
+    if isinstance(config["model_path"], dict):
+        config["model_path"] = config["model_path"][sys.platform]
 
     tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
     model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)

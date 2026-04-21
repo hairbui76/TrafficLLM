@@ -4,9 +4,9 @@ import torch
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 import json
 import os
+import sys
 from flask_cors import CORS
 import random
-import os
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
@@ -15,6 +15,8 @@ CORS(app)
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
+if isinstance(config["model_path"], dict):
+    config["model_path"] = config["model_path"][sys.platform]
 
 tokenizer = AutoTokenizer.from_pretrained(config["model_path"], trust_remote_code=True)
 model_config = AutoConfig.from_pretrained(config["model_path"], trust_remote_code=True, pre_seq_len=128)

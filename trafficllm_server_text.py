@@ -3,11 +3,14 @@ import streamlit as st
 import torch
 import json
 import os
+import sys
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 with open("config.json", "r", encoding="utf-8") as fin:
     config = json.load(fin)
+if isinstance(config["model_path"], dict):
+    config["model_path"] = config["model_path"][sys.platform]
 
 st.set_page_config(
     page_title="TrafficLLM Demo",
